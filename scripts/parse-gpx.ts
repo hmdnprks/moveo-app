@@ -120,6 +120,20 @@ const avgHr = hrsWithData.length > 0
 	: 0;
 const maxHr = hrsWithData.length > 0 ? Math.max(...hrsWithData.map((p) => p.hr)) : 0;
 
+// ── Map metadata ───────────────────────────────────────────────────────────────
+const lats = points.map((p) => p.lat);
+const lons = points.map((p) => p.lon);
+const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+const centerLat = (minLat + maxLat) / 2;
+const centerLon = (minLon + maxLon) / 2;
+const latSpan = maxLat - minLat;
+const lonSpan = maxLon - minLon;
+// Compute zoom so the route fills ~65% of the 1080px composition width
+const lonZoom = Math.log2((360 * 1080 * 0.65) / (256 * lonSpan));
+const latZoom = Math.log2((360 * 1080 * 0.65) / (256 * latSpan));
+const mapZoom = Math.round((Math.min(lonZoom, latZoom) - 0.3) * 10) / 10;
+
 const output = {
 	summary: {
 		date: new Date(sampled[0].time).toISOString().split('T')[0],
@@ -129,6 +143,10 @@ const output = {
 		avg_hr: avgHr,
 		max_hr: maxHr,
 		avg_pace_s_per_km: Math.round(totalElapsedS / totalDistKm),
+	},
+	map: {
+		center: [centerLon, centerLat] as [number, number],
+		zoom: mapZoom,
 	},
 	points: enriched,
 };
@@ -152,4 +170,5 @@ console.log(`  Date:     ${output.summary.date}`);
 console.log(`  Distance: ${output.summary.total_dist_km} km`);
 console.log(`  Duration: ${mins}:${secs}`);
 console.log(`  Avg HR:   ${avgHr} bpm`);
+console.log(`  Center:   [${centerLon.toFixed(4)}, ${centerLat.toFixed(4)}] zoom ${mapZoom}`);
 console.log(`  Written → src/run_data.json + public/run_data.json`);

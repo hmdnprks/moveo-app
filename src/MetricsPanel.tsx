@@ -1,265 +1,205 @@
+import React from 'react';
 import { interpolate } from 'remotion';
-import runData from './run_data.json';
-
-type RunPoint = (typeof runData.points)[number];
+import type { RunData, RunPoint, MetricKey, VideoConfig } from './types';
 
 const FONT = 'system-ui, -apple-system, sans-serif';
-const PANEL_BG = '#161618';
-
-const formatPace = (secPerKm: number) => {
-	const m = Math.floor(secPerKm / 60);
-	const s = Math.round(secPerKm % 60);
-	return `${m}:${s.toString().padStart(2, '0')}`;
-};
-
-const formatTime = (totalSec: number) => {
-	const m = Math.floor(totalSec / 60);
-	const s = Math.round(totalSec % 60);
-	return `${m}:${s.toString().padStart(2, '0')}`;
-};
-
-// Pre-compute elevation SVG path (done once at module load)
-const ELEVATIONS = runData.points.map((p) => p.ele);
-const MIN_ELE = Math.min(...ELEVATIONS);
-const MAX_ELE = Math.max(...ELEVATIONS);
-const ELE_RANGE = Math.max(MAX_ELE - MIN_ELE, 1);
 const CHART_W = 560;
 const CHART_H = 88;
 
-const buildElePoints = () =>
-	ELEVATIONS.map((e, i) => {
-		const x = (i / (ELEVATIONS.length - 1)) * CHART_W;
-		const y = CHART_H - ((e - MIN_ELE) / ELE_RANGE) * CHART_H;
-		return `${x.toFixed(1)},${y.toFixed(1)}`;
-	});
+// ── Formatters ────────────────────────────────────────────────────────────
 
-const ELE_POINTS = buildElePoints();
-const AREA_PATH = `M0,${CHART_H} L${ELE_POINTS.join(' L')} L${CHART_W},${CHART_H} Z`;
-const LINE_PATH = `M${ELE_POINTS.join(' L')}`;
+const formatPace = (s: number) => {
+	const m = Math.floor(s / 60);
+	const sec = Math.round(s % 60);
+	return `${m}:${sec.toString().padStart(2, '0')}`;
+};
+const formatTime = (s: number) => {
+	const m = Math.floor(s / 60);
+	const sec = Math.round(s % 60);
+	return `${m}:${sec.toString().padStart(2, '0')}`;
+};
 
-// ── Metric column ──────────────────────────────────────────────────────────────
-interface MetricColProps {
-	label: string;
-	value: string;
-	unit: string;
+// ── Metric resolver ───────────────────────────────────────────────────────
+
+interface MetricDisplay { label: string; value: string; unit: string }
+
+function resolveMetric(
+	key: MetricKey,
+	point: RunPoint,
+	summary: RunData['summary'],
+	routeProgress: number,
+): MetricDisplay {
+	switch (key) {
+		case 'distance':
+			return { label: 'Distance', value: point.dist_km.toFixed(2), unit: 'km' };
+		case 'pace': {
+			const raw = point.pace_s_per_km != null
+				? interpolate(routeProgress, [0, 0.05], [summary.avg_pace_s_per_km, point.pace_s_per_km], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+				: summary.avg_pace_s_per_km;
+			return { label: 'Pace', value: formatPace(raw), unit: '/km' };
+		}
+		case 'time':
+			return { label: 'Time', value: formatTime(point.elapsed_s), unit: '' };
+		case 'hr':
+			return { label: 'Heart Rate', value: point.hr > 0 ? String(point.hr) : '--', unit: 'bpm' };
+		case 'cadence':
+			return { label: 'Cadence', value: point.cad > 0 ? String(point.cad) : '--', unit: 'spm' };
+	}
 }
 
-const MetricCol: React.FC<MetricColProps> = ({ label, value, unit }) => (
-	<div
-		style={{
-			flex: 1,
-			display: 'flex',
-			flexDirection: 'column',
-			alignItems: 'center',
-			padding: '36px 0 28px',
-		}}
-	>
-		<div
-			style={{
-				fontSize: 24,
-				fontWeight: 600,
-				color: 'rgba(255,255,255,0.45)',
-				letterSpacing: 3,
-				textTransform: 'uppercase',
-				fontFamily: FONT,
-				marginBottom: 14,
-			}}
-		>
+// ── MetricCol (top-row, compact when 4 metrics) ───────────────────────────
+
+interface MetricColProps extends MetricDisplay {
+	accentColor: string;
+	compact?: boolean;
+}
+const MetricCol: React.FC<MetricColProps> = ({ label, value, unit, accentColor, compact }) => (
+	<div style={{
+		flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+		padding: compact ? '22px 0 16px' : '36px 0 28px',
+	}}>
+		<div style={{ fontSize: compact ? 20 : 24, fontWeight: 600, color: 'rgba(255,255,255,0.45)', letterSpacing: 3, textTransform: 'uppercase', fontFamily: FONT, marginBottom: compact ? 10 : 14 }}>
 			{label}
 		</div>
-		<div
-			style={{
-				fontSize: 80,
-				fontWeight: 800,
-				color: '#FFFFFF',
-				lineHeight: 1,
-				fontFamily: FONT,
-				fontVariantNumeric: 'tabular-nums',
-				letterSpacing: -1,
-			}}
-		>
+		<div style={{ fontSize: compact ? 66 : 80, fontWeight: 800, color: '#FFFFFF', lineHeight: 1, fontFamily: FONT, fontVariantNumeric: 'tabular-nums', letterSpacing: -1, opacity: value === '--' ? 0.3 : 1 }}>
 			{value}
 		</div>
-		<div
-			style={{
-				fontSize: 26,
-				fontWeight: 400,
-				color: 'rgba(255,255,255,0.4)',
-				marginTop: 10,
-				fontFamily: FONT,
-				letterSpacing: 1,
-			}}
-		>
+		<div style={{ fontSize: compact ? 22 : 26, fontWeight: 400, color: accentColor, marginTop: compact ? 8 : 10, fontFamily: FONT, letterSpacing: 1, opacity: 0.7 }}>
 			{unit}
 		</div>
 	</div>
 );
 
-// ── Elevation chart ────────────────────────────────────────────────────────────
+// ── FeaturedMetricRow (4th metric, full-width, bigger) ────────────────────
+
+interface FeaturedRowProps extends MetricDisplay { accentColor: string }
+const FeaturedMetricRow: React.FC<FeaturedRowProps> = ({ label, value, unit, accentColor }) => (
+	<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '18px 0 26px' }}>
+		<div style={{ fontSize: 26, fontWeight: 600, color: 'rgba(255,255,255,0.45)', letterSpacing: 3, textTransform: 'uppercase', fontFamily: FONT, marginBottom: 14 }}>
+			{label}
+		</div>
+		<div style={{ fontSize: 108, fontWeight: 800, color: '#FFFFFF', lineHeight: 1, fontFamily: FONT, fontVariantNumeric: 'tabular-nums', letterSpacing: -2, opacity: value === '--' ? 0.3 : 1 }}>
+			{value}
+		</div>
+		<div style={{ fontSize: 34, fontWeight: 400, color: accentColor, marginTop: 12, fontFamily: FONT, letterSpacing: 1, opacity: 0.7 }}>
+			{unit}
+		</div>
+	</div>
+);
+
+// ── Elevation chart ───────────────────────────────────────────────────────
+
+const buildEleChart = (points: RunData['points']) => {
+	const eles = points.map((p) => p.ele);
+	const minEle = Math.min(...eles);
+	const maxEle = Math.max(...eles);
+	const range = Math.max(maxEle - minEle, 1);
+	const ptStrings = eles.map((e, i) => {
+		const x = (i / (eles.length - 1)) * CHART_W;
+		const y = CHART_H - ((e - minEle) / range) * CHART_H;
+		return `${x.toFixed(1)},${y.toFixed(1)}`;
+	});
+	return {
+		areaPath: `M0,${CHART_H} L${ptStrings.join(' L')} L${CHART_W},${CHART_H} Z`,
+		linePath: `M${ptStrings.join(' L')}`,
+	};
+};
+
 interface ElevationChartProps {
+	runData: RunData;
 	routeProgress: number;
 	currentEle: number;
+	accentColor: string;
 }
-
-const ElevationChart: React.FC<ElevationChartProps> = ({ routeProgress, currentEle }) => {
+const ElevationChart: React.FC<ElevationChartProps> = ({ runData, routeProgress, currentEle, accentColor }) => {
+	const { areaPath, linePath } = buildEleChart(runData.points);
 	const clipX = routeProgress * CHART_W;
-
 	return (
-		<div
-			style={{
-				padding: '0 50px 44px',
-				display: 'flex',
-				flexDirection: 'row',
-				alignItems: 'flex-end',
-				gap: 28,
-			}}
-		>
-			{/* Label */}
-			<div
-				style={{
-					fontSize: 24,
-					fontWeight: 600,
-					color: 'rgba(255,255,255,0.45)',
-					letterSpacing: 3,
-					textTransform: 'uppercase',
-					fontFamily: FONT,
-					flexShrink: 0,
-					marginBottom: 6,
-				}}
-			>
+		<div style={{ padding: '0 50px 44px', display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: 28 }}>
+			<div style={{ fontSize: 24, fontWeight: 600, color: 'rgba(255,255,255,0.45)', letterSpacing: 3, textTransform: 'uppercase', fontFamily: FONT, flexShrink: 0, marginBottom: 6 }}>
 				Elevation
 			</div>
-
-			{/* SVG chart */}
-			<svg
-				width={CHART_W}
-				height={CHART_H}
-				style={{ flex: 1, overflow: 'visible' }}
-				viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-				preserveAspectRatio="none"
-			>
+			<svg width={CHART_W} height={CHART_H} style={{ flex: 1, overflow: 'visible' }} viewBox={`0 0 ${CHART_W} ${CHART_H}`} preserveAspectRatio="none">
 				<defs>
-					<clipPath id="progress-clip">
-						<rect x={0} y={0} width={clipX} height={CHART_H + 2} />
-					</clipPath>
+					<clipPath id="progress-clip"><rect x={0} y={0} width={clipX} height={CHART_H + 2} /></clipPath>
 					<linearGradient id="ele-grad" x1="0" y1="0" x2="0" y2="1">
-						<stop offset="0%" stopColor="#FF6B35" stopOpacity={0.7} />
-						<stop offset="100%" stopColor="#FF6B35" stopOpacity={0.05} />
+						<stop offset="0%" stopColor={accentColor} stopOpacity={0.7} />
+						<stop offset="100%" stopColor={accentColor} stopOpacity={0.05} />
 					</linearGradient>
 				</defs>
-
-				{/* Ghost area (full) */}
-				<path d={AREA_PATH} fill="#FF6B35" fillOpacity={0.06} />
-				<path d={LINE_PATH} fill="none" stroke="#FF6B35" strokeWidth={1.5} strokeOpacity={0.2} />
-
-				{/* Animated filled area */}
-				<path d={AREA_PATH} fill="url(#ele-grad)" clipPath="url(#progress-clip)" />
-				<path
-					d={LINE_PATH}
-					fill="none"
-					stroke="#FF6B35"
-					strokeWidth={2.5}
-					clipPath="url(#progress-clip)"
-				/>
+				<path d={areaPath} fill={accentColor} fillOpacity={0.06} />
+				<path d={linePath} fill="none" stroke={accentColor} strokeWidth={1.5} strokeOpacity={0.2} />
+				<path d={areaPath} fill="url(#ele-grad)" clipPath="url(#progress-clip)" />
+				<path d={linePath} fill="none" stroke={accentColor} strokeWidth={2.5} clipPath="url(#progress-clip)" />
 			</svg>
-
-			{/* Current elevation value */}
-			<div
-				style={{
-					flexShrink: 0,
-					display: 'flex',
-					flexDirection: 'column',
-					alignItems: 'flex-end',
-					marginBottom: 4,
-				}}
-			>
-				<div
-					style={{
-						fontSize: 52,
-						fontWeight: 700,
-						color: '#FFFFFF',
-						lineHeight: 1,
-						fontFamily: FONT,
-						fontVariantNumeric: 'tabular-nums',
-					}}
-				>
-					{Math.round(currentEle)}
-				</div>
-				<div
-					style={{
-						fontSize: 22,
-						color: 'rgba(255,255,255,0.4)',
-						fontFamily: FONT,
-						letterSpacing: 1,
-						marginTop: 4,
-					}}
-				>
-					m
-				</div>
+			<div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginBottom: 4 }}>
+				<div style={{ fontSize: 52, fontWeight: 700, color: '#FFFFFF', lineHeight: 1, fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }}>{Math.round(currentEle)}</div>
+				<div style={{ fontSize: 22, color: 'rgba(255,255,255,0.4)', fontFamily: FONT, letterSpacing: 1, marginTop: 4 }}>m</div>
 			</div>
 		</div>
 	);
 };
 
-// ── Panel ──────────────────────────────────────────────────────────────────────
+// ── MetricsPanel ──────────────────────────────────────────────────────────
+
 interface MetricsPanelProps {
+	runData: RunData;
 	currentPoint: RunPoint;
 	routeProgress: number;
+	config: VideoConfig;
 }
 
-export const MetricsPanel: React.FC<MetricsPanelProps> = ({ currentPoint, routeProgress }) => {
-	const dist = currentPoint.dist_km.toFixed(2);
+export const MetricsPanel: React.FC<MetricsPanelProps> = ({ runData, currentPoint, routeProgress, config }) => {
+	const { accentColor, bgColor, metrics, showElevation } = config;
+	const isFour = metrics.length >= 4;
 
-	const pace =
-		currentPoint.pace_s_per_km != null
-			? formatPace(
-					interpolate(
-						routeProgress,
-						[0, 0.05],
-						[runData.summary.avg_pace_s_per_km, currentPoint.pace_s_per_km],
-						{ extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
-					),
-				)
-			: formatPace(runData.summary.avg_pace_s_per_km);
+	// Panel height accounts for the extra featured row when 4 metrics are used.
+	// Values overlap slightly into the map gradient area — that's intentional.
+	const panelHeight = isFour
+		? (showElevation ? 800 : 600)
+		: (showElevation ? 660 : 420);
 
-	const elapsed = formatTime(currentPoint.elapsed_s);
+	const topMetrics = isFour ? metrics.slice(0, 3) : metrics;
+	const featuredKey = isFour ? metrics[3] : null;
+	const featured = featuredKey ? resolveMetric(featuredKey, currentPoint, runData.summary, routeProgress) : null;
+
+	const Divider = () => <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '32px 0' }} />;
+	const HSep   = () => <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '0 50px' }} />;
 
 	return (
-		<div
-			style={{
-				position: 'absolute',
-				bottom: 0,
-				left: 0,
-				right: 0,
-				height: 660,
-				backgroundColor: PANEL_BG,
-				display: 'flex',
-				flexDirection: 'column',
-				justifyContent: 'space-between',
-			}}
-		>
-			{/* Orange accent line at top of panel */}
-			<div
-				style={{
-					height: 3,
-					background: 'linear-gradient(to right, transparent 5%, #FF6B35 40%, #FF6B35 60%, transparent 95%)',
-				}}
-			/>
+		<div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: panelHeight, backgroundColor: bgColor, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
 
-			{/* 3-column metric row */}
+			{/* Top accent line */}
+			<div style={{ height: 3, background: `linear-gradient(to right, transparent 5%, ${accentColor} 40%, ${accentColor} 60%, transparent 95%)` }} />
+
+			{/* Top 3 metric columns */}
 			<div style={{ display: 'flex', flexDirection: 'row' }}>
-				<MetricCol label="Distance" value={dist} unit="km" />
-				<div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '32px 0' }} />
-				<MetricCol label="Pace" value={pace} unit="/km" />
-				<div style={{ width: 1, background: 'rgba(255,255,255,0.08)', margin: '32px 0' }} />
-				<MetricCol label="Time" value={elapsed} unit="" />
+				{topMetrics.map((key, i) => {
+					const m = resolveMetric(key, currentPoint, runData.summary, routeProgress);
+					return (
+						<React.Fragment key={key + i}>
+							{i > 0 && <Divider />}
+							<MetricCol {...m} accentColor={accentColor} compact={isFour} />
+						</React.Fragment>
+					);
+				})}
 			</div>
 
-			{/* Horizontal rule */}
-			<div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '0 50px' }} />
+			{/* 4th metric — featured full-width row */}
+			{featured && (
+				<>
+					<HSep />
+					<FeaturedMetricRow {...featured} accentColor={accentColor} />
+				</>
+			)}
 
-			{/* Elevation row */}
-			<ElevationChart routeProgress={routeProgress} currentEle={currentPoint.ele} />
+			{/* Elevation chart */}
+			{showElevation && (
+				<>
+					<HSep />
+					<ElevationChart runData={runData} routeProgress={routeProgress} currentEle={currentPoint.ele} accentColor={accentColor} />
+				</>
+			)}
 		</div>
 	);
 };

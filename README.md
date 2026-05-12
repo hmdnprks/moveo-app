@@ -35,7 +35,7 @@ bun install
 **Parse your GPX file**
 
 ```bash
-bun scripts/parse-gpx.ts your_run.gpx
+bun run parse your_run.gpx
 ```
 
 This writes `src/run_data.json` and `public/run_data.json`.

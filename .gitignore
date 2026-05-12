@@ -6,6 +6,9 @@ dist
 # Ignore the output video from Git but not videos you import into src/.
 out
 
+# Next.js build output
+web/.next/
+
 # AI tool configs
 .agent/
 .agents/

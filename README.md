@@ -20,7 +20,7 @@ Turn your GPX run files into animated Instagram Stories — dark map, live metri
 
 ## How it works
 
-1. A Python script parses your `.gpx` file into `src/run_data.json` (coordinates, pace, elevation, heart rate per point)
+1. A TypeScript script parses your `.gpx` file into `src/run_data.json` (coordinates, pace, elevation, heart rate per point)
 2. Remotion renders 900 frames (30s × 30fps) in headless Chromium — each frame advances the route progress and updates the metrics
 3. ffmpeg encodes the frames into an MP4
 
@@ -35,7 +35,7 @@ bun install
 **Parse your GPX file**
 
 ```bash
-python3 scripts/parse_gpx.py your_run.gpx
+bun scripts/parse-gpx.ts your_run.gpx
 ```
 
 This writes `src/run_data.json` and `public/run_data.json`.

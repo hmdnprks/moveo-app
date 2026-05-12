@@ -9,6 +9,7 @@
     "@remotion/cli": "4.0.459",
     "@remotion/tailwind-v4": "4.0.459",
     "@turf/turf": "^7.3.5",
+    "fast-xml-parser": "^5.8.0",
     "maplibre-gl": "^5.24.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
